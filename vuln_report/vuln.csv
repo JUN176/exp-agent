@@ -1,0 +1,2 @@
+vuln-id,filepath,module,cwe,line-start,line-end,description
+1,../opentitan/hw/ip/hmac/rtl/hmac_reg_top.sv,hmac,200,2128,2128,"Since ""wipe_secret_we"" can only be true when ""reg_error"" is true,the HMAC secret wipe mechanism does not work under normal conditions.This allows an attacker to reuse the previous user's key to compute the HMAC digest."
