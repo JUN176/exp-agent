@@ -143,6 +143,68 @@ def read_file_content(
         return f"Error: Could not read file '{file_path}'. Reason: {e}"
 
 
+def read_rtl_lines(file_path: str, line_spec: str) -> str:
+    """
+    根据行号规格读取RTL文件的指定行。
+
+    这个工具可以解析复杂的行号表示，如"729,770,811,852,1710-1724"，并读取对应的行内容。
+
+    Args:
+        file_path (str): RTL文件的相对路径
+        line_spec (str): 行号规格，支持逗号分隔的单行号和连字符分隔的行范围，例如"729,770,811,852,1710-1724"
+
+    Returns:
+        str: 包含所有指定行内容的字符串，每行前面带有行号
+    """
+    # 解析行号规格
+    line_numbers = set()
+
+    # 分割逗号分隔的部分
+    parts = line_spec.split(',')
+
+    for part in parts:
+        part = part.strip()
+        if '-' in part:
+            # 处理范围，如"1710-1724"
+            try:
+                start, end = map(int, part.split('-'))
+                if start <= end:
+                    line_numbers.update(range(start, end + 1))
+                else:
+                    return f"Error: Invalid line range '{part}' (start > end)"
+            except ValueError:
+                return f"Error: Invalid line range format '{part}'"
+        else:
+            # 处理单行号
+            try:
+                line_numbers.add(int(part))
+            except ValueError:
+                return f"Error: Invalid line number '{part}'"
+
+    # 排序行号
+    sorted_lines = sorted(list(line_numbers))
+
+    # 读取文件内容
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            all_lines = f.readlines()
+    except IOError as e:
+        return f"Error: Could not read file '{file_path}'. Reason: {e}"
+
+    # 提取指定行
+    result_lines = []
+    for line_num in sorted_lines:
+        # 检查行号是否在文件范围内 (1-indexed)
+        if 1 <= line_num <= len(all_lines):
+            # 添加行号前缀
+            result_lines.append(f"L{line_num:04d}: {all_lines[line_num - 1]}")
+        else:
+            result_lines.append(
+                f"L{line_num:04d}: [Line not found in file (file has {len(all_lines)} lines)]\n")
+
+    return ''.join(result_lines)
+
+
 def read_vulnerability_csv(csv_path: str) -> List[dict]:
     """
     从CSV文件读取漏洞信息列表。
@@ -158,12 +220,12 @@ def read_vulnerability_csv(csv_path: str) -> List[dict]:
             - vuln_id: 漏洞ID
             - filepath: RTL文件路径
             - module: 模块名称
-            - line_start: 起始行号
-            - line_end: 结束行号
-            - description: 漏洞描述
+            - line: 行号信息
+            - finding: 发现的问题
+            - security_impact: 安全影响
 
     CSV Schema:
-        vuln-id,filepath,module,line-start,line-end,description
+        vuln-id,filepath,moudle,line,Finding,Security impact
     """
     import csv
 
@@ -178,13 +240,18 @@ def read_vulnerability_csv(csv_path: str) -> List[dict]:
                 if not row.get('vuln-id') or not row['vuln-id'].strip():
                     continue
 
+                # 处理可能缺失的字段
+                def safe_strip(value):
+                    return value.strip() if value is not None else ''
+
                 vuln_record = {
-                    'vuln_id': row['vuln-id'].strip(),
-                    'filepath': row['filepath'].strip(),
-                    'module': row['module'].strip(),
-                    'line_start': int(row['line-start'].strip()),
-                    'line_end': int(row['line-end'].strip()),
-                    'description': row['description'].strip()
+                    'vuln_id': safe_strip(row.get('vuln-id', '')),
+                    'filepath': safe_strip(row.get('filepath', '')),
+                    # 注意这里是moudle而不是module
+                    'module': safe_strip(row.get('moudle', '')),
+                    'line': safe_strip(row.get('line', '')),
+                    'finding': safe_strip(row.get('Finding', '')),
+                    'security_impact': safe_strip(row.get('Security impact', ''))
                 }
                 vulnerabilities.append(vuln_record)
 
@@ -206,7 +273,8 @@ def create_exploit_package(
     asm_content: Optional[str] = None,
     build_content: Optional[str] = None,
     readme_content: Optional[str] = None,
-    output_base_dir: str = "agent_output"
+    output_base_dir: str = "agent_output",
+    vuln_id: Optional[str] = None
 ) -> str:
     """
     创建一个完整的漏洞利用包，包含所有必要的文件。
@@ -223,20 +291,26 @@ def create_exploit_package(
         build_content (Optional[str]): BUILD文件的完整内容
         readme_content (Optional[str]): README.md文件的内容，包含漏洞说明和使用方法
         output_base_dir (str): 输出的基础目录，默认为 "agent_output"
+        vuln_id (Optional[str]): 漏洞ID，用于创建带前缀的目录名
 
     Returns:
         str: 操作结果描述，包括创建的文件列表和路径信息
 
     Directory Structure:
         agent_output/
-        └── {vulnerability_name}/
+        └── {vuln_id}-{vulnerability_name}/ (if vuln_id provided)
+        └── {vulnerability_name}/ (if vuln_id not provided)
             ├── BUILD
             ├── {c_filename}.c (if provided)
             ├── {asm_filename}.S (if provided)
             └── README.md (if provided)
     """
-    # 创建漏洞专属目录
-    vuln_dir = os.path.join(output_base_dir, vulnerability_name)
+    # 创建漏洞专属目录，如果提供了vuln_id则添加前缀
+    if vuln_id:
+        dir_name = f"{vuln_id}-{vulnerability_name}"
+    else:
+        dir_name = vulnerability_name
+    vuln_dir = os.path.join(output_base_dir, dir_name)
 
     try:
         os.makedirs(vuln_dir, exist_ok=True)

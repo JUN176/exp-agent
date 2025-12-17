@@ -1,0 +1,22 @@
+load("//rules/opentitan:defs.bzl", "fpga_params", "opentitan_test")
+
+opentitan_test(
+    name = "entropy_src_markov_vuln_test",
+    srcs = ["entropy_src_markov_vuln_test.c"],
+    exec_env = {
+        "//hw/top_earlgrey:sim_verilator": None,
+        "//hw/top_earlgrey:sim_dv": None,
+    },
+    fpga = fpga_params(
+        changes_otp = False,
+    ),
+    deps = [
+        "//hw/top_earlgrey/sw/autogen:top_earlgrey",
+        "//hw/top:entropy_src_c_regs",
+        "//sw/device/lib/dif:dif_entropy_src",
+        "//sw/device/lib/base:mmio",
+        "//sw/device/lib/base:abs_mmio",
+        "//sw/device/lib/runtime:log",
+        "//sw/device/lib/testing/test_framework:ottf_main",
+    ],
+)
