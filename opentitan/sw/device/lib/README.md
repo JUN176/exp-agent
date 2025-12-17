@@ -23,5 +23,5 @@ These are organised into the `sw/device/lib` directory.
     contains test library code. Test library code is any (reusable) code that
     could aid in the writing of smoke, IP integration, or system-level tests,
     that is a layer of above the DIFs. In other words, this code may make use
-    of the DIFs to actuate the hardware, and chip-level test code may make use
+    of the DIFs to actuate the hardware, and chip-level test code may make 
     of this code to actuate the DIFs.

@@ -29,7 +29,7 @@ def _search_and_match(search_path: str, regex_pattern: str) -> List[str]:
 
 def find_related_files(
     module_name: str,
-    file_type: Literal['dif', 'testutils', 'tests', 'build', 'all']
+    file_type: Literal['dif', 'testutils', 'tests', 'build', 'base', 'all']
 ) -> List[str]:
     """
     Find all relevant OpenTitan software files by module name and file type.
@@ -39,7 +39,8 @@ def find_related_files(
     Args:
         module_name (str): The name of the target IP module (e.g. "otp_ctrl").
         file_type (Literal): The type of file to look for. Can be:
-            - 'dif': Find Driver Interface files.
+            - 'base': Find base library files (PRIORITY for POC development).
+            - 'dif': Find Driver Interface files (REFERENCE ONLY).
             - 'testutils': Finds the testutils library files.
             - 'tests': Find existing test files for the module.
             - 'build': Find the BUILD file in the test directory.
@@ -51,7 +52,10 @@ def find_related_files(
     search_path = ""
     regex_pattern = ""
 
-    if file_type == 'dif':
+    if file_type == 'base':
+        search_path = "opentitan/sw/device/lib/base"
+        regex_pattern = r"^.*\.(h|c)$"  # All base library files
+    elif file_type == 'dif':
         search_path = "opentitan/sw/device/lib/dif"
         regex_pattern = rf"^dif_{module_name}.*\.(h|c)$"
     elif file_type == 'testutils':
@@ -66,12 +70,12 @@ def find_related_files(
     elif file_type == 'all':
         # 递归调用自身以收集所有类型的文件
         all_files = []
-        for f_type in ['dif', 'testutils', 'tests', 'build']:
+        for f_type in ['base', 'dif', 'testutils', 'tests', 'build']:
             all_files.extend(find_related_files(module_name, f_type))
         return list(set(all_files))  # 使用 set 去除可能的重复项
     else:
         print(f"Error: Invalid file_type '{file_type}'. "
-              f"Must be one of: 'dif', 'testutils', 'tests', 'build', 'all'.")
+              f"Must be one of: 'base', 'dif', 'testutils', 'tests', 'build', 'all'.")
         return []
 
     return _search_and_match(search_path, regex_pattern)
@@ -137,17 +141,6 @@ def read_file_content(
 
     except IOError as e:
         return f"Error: Could not read file '{file_path}'. Reason: {e}"
-
-
-def write_file(file_path: str, content: str) -> str:
-    """Writes content to a file, creating directories if needed."""
-    try:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        return f"Successfully wrote content to {file_path}"
-    except Exception as e:
-        return f"Error writing to file {file_path}: {e}"
 
 
 def read_vulnerability_csv(csv_path: str) -> List[dict]:
