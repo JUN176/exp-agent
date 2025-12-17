@@ -3,8 +3,8 @@ Vulnerability: AES KEY_SHARE1 Read Alias to DATA_IN (Vuln ID 1)
 Affected Module: aes
 RTL: hw/ip/aes/rtl/aes_reg_top.sv
 Relevant RTL lines:
-  - L0729, L0770, L0811, L0852: nets .qs connected to data_in_[0..3]_qs
-  - L1710-L1724: top-level read multiplexer maps addr_hit[9..12] to data_in_[0..3]_qs
+  - L0733, L0774, L0815, L0856: nets .qs connected to data_in_[0..3]_qs
+  - L1714-L1728: top-level read multiplexer maps addr_hit[9..12] to data_in_[0..3]_qs
 
 Summary:
 A read-multiplexer bug in aes_reg_top.sv causes reads to the write-only

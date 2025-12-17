@@ -178,12 +178,16 @@ module aes_reg_top (
   logic [31:0] iv_3_wd;
   logic data_in_0_we;
   logic [31:0] data_in_0_wd;
+  logic [31:0] data_in_0_qs;
   logic data_in_1_we;
   logic [31:0] data_in_1_wd;
+  logic [31:0] data_in_1_qs;
   logic data_in_2_we;
   logic [31:0] data_in_2_wd;
+  logic [31:0] data_in_2_qs;
   logic data_in_3_we;
   logic [31:0] data_in_3_wd;
+  logic [31:0] data_in_3_qs;
   logic data_out_0_re;
   logic [31:0] data_out_0_qs;
   logic data_out_1_re;
