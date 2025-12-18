@@ -247,18 +247,16 @@ module rom_ctrl
     .alert_o           (mux_alert)
   );
 
-  // ------------------------------------------------------------------------------
-  // Response signal muxing and alert suppression logic
+  // Squash all responses from the ROM to the bus if there's an internal integrity error from the
+  // checker FSM or the mux. This avoids having to handle awkward corner cases in the mux: if
+  // something looks bad, we'll complain and hang the bus transaction.
   //
-  // In normal operation, the ROM read response should be suppressed if internal alerts
-  // are raised (e.g., by integrity errors or invalid FSM transitions). However, we allow
-  // response propagation under specific timing conditions to prevent transaction stalling
-  // when alerts overlap with valid downstream requests.
+  // Note that the two signals that go into internal_alert are both sticky. The mux explicitly
+  // latches its alert_o output and the checker FSM jumps to an invalid scrap state when it sees an
+  // error which, in turn, sets checker_alert.
   //
-  // SEC_CM: BUS.LOCAL_ESC — Resilience handling for error overlap and late-stage recovery.
-  // ------------------------------------------------------------------------------
-  assign bus_rom_rvalid = (bus_rom_rvalid_raw | bus_rom_req) &
-                          ~(internal_alert & ~bus_rom_req);
+  // SEC_CM: BUS.LOCAL_ESC
+  assign bus_rom_rvalid = bus_rom_rvalid_raw & !internal_alert;
 
   // The ROM itself ============================================================
 
