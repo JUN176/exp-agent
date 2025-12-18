@@ -4,6 +4,8 @@ import subprocess
 import re
 import asyncio
 import sys
+import threading
+import time
 from typing import Optional
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
@@ -17,6 +19,9 @@ AGENT_OUTPUT_DIR = "/home/exp-agent/agent_output"
 OPENTITAN_TESTS_DIR = "/home/exp-agent/opentitan/sw/device/tests"
 OPENTITAN_ROOT = "/home/exp-agent/opentitan"
 DEST_BUILD_FILE = os.path.join(OPENTITAN_TESTS_DIR, "BUILD")
+
+# Global Lock for Bazel
+BAZEL_LOCK = threading.Lock()
 
 # Model Setup
 model = OpenAIModel(
@@ -48,6 +53,14 @@ def write_file(file_path: str, content: str) -> str:
 
 def run_bazel_test(test_name: str) -> str:
     """Runs the bazel test and returns the output (stdout + stderr)."""
+    # Sanitize test_name in case the agent passes a full label or suffix
+    if test_name.startswith("//"):
+        if ":" in test_name:
+            test_name = test_name.split(":")[-1]
+            
+    if test_name.endswith("_sim_verilator"):
+        test_name = test_name.replace("_sim_verilator", "")
+
     target = f"//sw/device/tests:{test_name}_sim_verilator"
     cmd = [
         "bazel", "test",
@@ -56,32 +69,91 @@ def run_bazel_test(test_name: str) -> str:
         "--test_timeout=9999",
         target
     ]
-    print(f"Running: {' '.join(cmd)}")
+    
+    # Acquire lock to prevent concurrent Bazel executions
+    if not BAZEL_LOCK.acquire(blocking=False):
+        return "EXECUTION ERROR: Bazel is already running. Please wait for the previous test to finish."
+    
     try:
-        # Run bazel command from the OpenTitan root directory
-        result = subprocess.run(
-            cmd,
-            cwd=OPENTITAN_ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-            timeout=600 # 10 minutes timeout
-        )
+        print(f"🚀 Starting Bazel Test: {target}")
+        print(f"📂 Working Directory: {OPENTITAN_ROOT}")
+        print(f"💻 Command: {' '.join(cmd)}")
+        print("-" * 20 + " BAZEL OUTPUT START " + "-" * 20)
         
-        status = "PASS" if result.returncode == 0 else f"FAIL (Exit Code {result.returncode})"
-        output = f"Status: {status}\n\nOutput:\n{result.stdout}"
+        output_buffer = []
+        last_line_holder = {"text": ""}
+        stop_heartbeat = threading.Event()
+        process = None
+
+        def heartbeat():
+            while not stop_heartbeat.is_set():
+                time.sleep(20)
+                if stop_heartbeat.is_set():
+                    break
+                # Print the last line seen
+                msg = last_line_holder["text"].strip()
+                if msg:
+                    timestamp = time.strftime("%H:%M:%S")
+                    print(f"\n⏳ [{timestamp} - Still Running] Last Bazel Output: {msg}")
+                    sys.stdout.flush()
+
+        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        heartbeat_thread.start()
         
-        # Truncate output if too long to avoid context limit issues
-        if len(output) > 50000:
-            output = output[:25000] + "\n...[Output Truncated]...\n" + output[-25000:]
+        try:
+            # Use Popen to stream output
+            process = subprocess.Popen(
+                cmd,
+                cwd=OPENTITAN_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
             
-        return output
+            # Read stdout line by line
+            while True:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                if line:
+                    print(line, end='') # Stream to user terminal
+                    sys.stdout.flush()  # Ensure output is displayed immediately
+                    output_buffer.append(line) # Capture for LLM
+                    last_line_holder["text"] = line
+                    
+            return_code = process.poll()
+            full_output = "".join(output_buffer)
             
-    except subprocess.TimeoutExpired:
-        return "EXECUTION ERROR: Timeout expired"
+            print("-" * 20 + " BAZEL OUTPUT END " + "-" * 20)
+            
+            status = "PASS" if return_code == 0 else f"FAIL (Exit Code {return_code})"
+            output = f"Status: {status}\n\nOutput:\n{full_output}"
+            
+            # Truncate output if too long to avoid context limit issues
+            if len(output) > 50000:
+                output = output[:25000] + "\n...[Output Truncated]...\n" + output[-25000:]
+            
+            return output
+        except Exception as e:
+            # If an error occurs (e.g. cancellation), ensure we kill the subprocess
+            if process and process.poll() is None:
+                print(f"\n⚠️ Terminating Bazel process due to error: {e}")
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            raise e
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=1)
+                
     except Exception as e:
         return f"EXECUTION ERROR: {e}"
+    finally:
+        BAZEL_LOCK.release()
 
 def update_build_rule(test_name: str, new_rule_content: str) -> str:
     """Updates the opentitan_test rule for the given test_name in sw/device/tests/BUILD."""
@@ -193,23 +265,68 @@ async def process_vulnerability(vuln_dir):
     src_build = os.path.join(vuln_path, build_file)
     try:
         with open(src_build, 'r') as f:
-            build_content = f.read()
+            raw_build_content = f.read()
         
-        match = re.search(r'opentitan_test\s*\(\s*name\s*=\s*"([^"]+)"', build_content)
-        if not match:
-            print("⚠️  Skipping: Could not find test name in BUILD")
-            return
-        test_name = match.group(1)
+        # Extract opentitan_test rule block
+        start_match = re.search(r'opentitan_test\s*\(', raw_build_content)
+        if not start_match:
+             print("⚠️  Skipping: Could not find opentitan_test rule in BUILD")
+             return
+        
+        start_idx = start_match.start()
+        
+        # Find matching closing parenthesis
+        open_count = 0
+        end_idx = -1
+        for i in range(start_idx, len(raw_build_content)):
+            if raw_build_content[i] == '(':
+                open_count += 1
+            elif raw_build_content[i] == ')':
+                open_count -= 1
+                if open_count == 0:
+                    end_idx = i + 1
+                    break
+        
+        if end_idx == -1:
+             print("⚠️  Skipping: Malformed opentitan_test rule")
+             return
+
+        rule_content = raw_build_content[start_idx:end_idx]
+
+        # Extract srcs to determine correct name
+        srcs_match = re.search(r'srcs\s*=\s*\["([^"]+)"\]', rule_content)
+        if not srcs_match:
+             print("⚠️  Skipping: Could not find srcs in opentitan_test rule")
+             return
+        
+        c_filename = srcs_match.group(1)
+        expected_name = c_filename.replace(".c", "")
+        
+        # Extract current name
+        name_match = re.search(r'name\s*=\s*"([^"]+)"', rule_content)
+        if not name_match:
+             print("⚠️  Skipping: Could not find name in opentitan_test rule")
+             return
+        
+        current_name = name_match.group(1)
+        test_name = expected_name
+        
+        # Fix name if it doesn't match srcs
+        if current_name != expected_name:
+            print(f"ℹ️  Fixing test name: '{current_name}' -> '{expected_name}'")
+            rule_content = rule_content.replace(f'name = "{current_name}"', f'name = "{expected_name}"')
         
         # Append to BUILD if not exists
         with open(DEST_BUILD_FILE, 'r') as f:
             dest_content = f.read()
         
         if f'name = "{test_name}"' not in dest_content:
+            # Append to the end of the file as requested
+            new_entry = f"\n\n# Added by agent2.py for {vuln_dir}\n{rule_content}"
+            
+            print(f"Appending {test_name} to end of BUILD...")
             with open(DEST_BUILD_FILE, 'a') as f:
-                f.write("\n\n")
-                f.write(f"# Added by agent2.py for {vuln_dir}\n")
-                f.write(build_content)
+                f.write(new_entry)
             print(f"✓ Added {test_name} to BUILD")
         else:
             print(f"ℹ️  Test {test_name} already in BUILD")
