@@ -40,60 +40,43 @@ def _search_and_match(search_path: str, regex_pattern: str) -> List[str]:
     return matching_files
 
 
-def find_related_files(
-    module_name: str,
-    file_type: Literal['dif', 'testutils', 'tests', 'build', 'base', 'all']
-) -> List[str]:
+def list_index_categories() -> List[str]:
     """
-    Find all relevant OpenTitan software files by module name and file type.
-
-    This tool encapsulates the file structure and naming conventions of the OpenTitan   repository, simplifying the process of finding context files for Agent
-
-    Args:
-        module_name (str): The name of the target IP module (e.g. "otp_ctrl").
-        file_type (Literal): The type of file to look for. Can be:
-            - 'base': Find base library files (PRIORITY for POC development).
-            - 'dif': Find Driver Interface files (REFERENCE ONLY).
-            - 'testutils': Finds the testutils library files.
-            - 'tests': Find existing test files for the module.
-            - 'build': Find the BUILD file in the test directory.
-            - 'all': performs all the above searches and returns a combined list.
-
+    List all available index categories (markdown files) in the index directory.
+    
     Returns:
-        List[str]: a list of strings containing the relative paths of all matching files.Returns an empty list if the file type is invalid or the file was not found.
+        List[str]: A list of filenames (e.g., ['crypto.md', 'base.md', 'top.md']).
     """
-    search_path = ""
-    regex_pattern = ""
-
-    _log_action(f"Called find_related_files(module_name='{module_name}', file_type='{file_type}')")
-
-    if file_type == 'base':
-        search_path = "opentitan/sw/device/lib/base"
-        regex_pattern = r"^.*\.(h|c)$"  # All base library files
-    elif file_type == 'dif':
-        search_path = "opentitan/sw/device/lib/dif"
-        regex_pattern = rf"^dif_{module_name}.*\.(h|c)$"
-    elif file_type == 'testutils':
-        search_path = "opentitan/sw/device/lib/testing"
-        regex_pattern = rf"^{module_name}_testutils.*\.(h|c)$"
-    elif file_type == 'tests':
-        search_path = "opentitan/sw/device/tests"
-        regex_pattern = rf"^{module_name}.*\.(c|h)$"
-    elif file_type == 'build':
-        search_path = "opentitan/sw/device/tests"
-        regex_pattern = r"^BUILD$"
-    elif file_type == 'all':
-        # 递归调用自身以收集所有类型的文件
-        all_files = []
-        for f_type in ['base', 'dif', 'testutils', 'tests', 'build']:
-            all_files.extend(find_related_files(module_name, f_type))
-        return list(set(all_files))  # 使用 set 去除可能的重复项
-    else:
-        print(f"Error: Invalid file_type '{file_type}'. "
-              f"Must be one of: 'base', 'dif', 'testutils', 'tests', 'build', 'all'.")
+    index_dir = "index"
+    _log_action("Called list_index_categories()")
+    
+    if not os.path.isdir(index_dir):
         return []
+        
+    return [f for f in os.listdir(index_dir) if f.endswith('.md')]
 
-    return _search_and_match(search_path, regex_pattern)
+
+def read_index_file(filename: str) -> str:
+    """
+    Read the content of a specific index file.
+    
+    Args:
+        filename (str): The name of the index file to read (e.g., "crypto.md").
+        
+    Returns:
+        str: The content of the index file.
+    """
+    file_path = os.path.join("index", filename)
+    _log_action(f"Called read_index_file(filename='{filename}')")
+    
+    if not os.path.isfile(file_path):
+        return f"Error: Index file '{filename}' not found."
+        
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return f"Error reading index file: {e}"
 
 
 def read_file_content(
@@ -108,7 +91,7 @@ def read_file_content(
 
     Args:
         file_path (str): relative path to the file (e.g. "sw/device/lib/dif/dif_otp_ctrl.h"). 
-        This path is usually provided by the find_related_files utility.
+        This path is usually provided by the index files.
         start_line (Optional[int]): the start line number to read (start at 1 and include this line).
         If None, then read from the beginning of the file.
         end_line (Optional[int]): The end line number to read (from 1, including this line). 

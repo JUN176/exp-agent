@@ -17,7 +17,8 @@ load_dotenv()
 #                         base_url="https://api.deepseek.com")
 # )
 model = OpenAIModel(
-    "qwen3-coder-480b-a35b-instruct",
+    # "qwen3-coder-480b-a35b-instruct",
+    "gpt-5-mini",
     provider=OpenAIProvider(api_key=os.getenv('OPEN_API_KEY'),
                             base_url="https://chatbox.isrc.ac.cn/api")
 )
@@ -47,8 +48,9 @@ SYSTEM_PROMPT = load_system_prompt()
 agent = Agent(
     model,
     system_prompt=SYSTEM_PROMPT,
-    tools=[tools.find_related_files, tools.read_file_content,
-           tools.read_rtl_lines, tools.create_exploit_package]
+    tools=[tools.read_file_content, tools.read_rtl_lines,
+           tools.create_exploit_package, tools.list_index_categories,
+           tools.read_index_file]
 )
 
 
@@ -57,8 +59,9 @@ def create_fresh_agent():
     return Agent(
         model,
         system_prompt=SYSTEM_PROMPT,
-        tools=[tools.find_related_files, tools.read_file_content,
-               tools.read_rtl_lines, tools.create_exploit_package]
+        tools=[tools.read_file_content, tools.read_rtl_lines,
+               tools.create_exploit_package, tools.list_index_categories,
+               tools.read_index_file]
     )
 
 
