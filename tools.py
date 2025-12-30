@@ -1,6 +1,19 @@
 import os
 import re
 from typing import List, Literal, Optional
+from contextvars import ContextVar
+from datetime import datetime
+
+# Context variable to store tool usage logs
+tool_usage_log: ContextVar[Optional[List[str]]] = ContextVar('tool_usage_log', default=None)
+
+
+def _log_action(message: str):
+    """Helper to log tool usage to the context variable."""
+    logs = tool_usage_log.get()
+    if logs is not None:
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logs.append(f"[{timestamp}] {message}")
 
 
 def _search_and_match(search_path: str, regex_pattern: str) -> List[str]:
@@ -51,6 +64,8 @@ def find_related_files(
     """
     search_path = ""
     regex_pattern = ""
+
+    _log_action(f"Called find_related_files(module_name='{module_name}', file_type='{file_type}')")
 
     if file_type == 'base':
         search_path = "opentitan/sw/device/lib/base"
@@ -115,6 +130,8 @@ def read_file_content(
     if start_line and end_line and start_line > end_line:
         return (f"Error: start_line ({start_line}) cannot be greater than "
                 f"end_line ({end_line}).")
+
+    _log_action(f"Called read_file_content(file_path='{file_path}', start_line={start_line}, end_line={end_line})")
 
     # 2. 文件读取逻辑
     try:
@@ -183,6 +200,8 @@ def read_rtl_lines(file_path: str, line_spec: str) -> str:
 
     # 排序行号
     sorted_lines = sorted(list(line_numbers))
+
+    _log_action(f"Called read_rtl_lines(file_path='{file_path}', line_spec='{line_spec}')")
 
     # 读取文件内容
     try:
@@ -312,9 +331,19 @@ def create_exploit_package(
         dir_name = vulnerability_name
     vuln_dir = os.path.join(output_base_dir, dir_name)
 
+    _log_action(f"Called create_exploit_package(vulnerability_name='{vulnerability_name}', vuln_id='{vuln_id}')")
+
     try:
         os.makedirs(vuln_dir, exist_ok=True)
         created_files = []
+
+        # 写入工具使用日志
+        logs = tool_usage_log.get()
+        if logs:
+            log_path = os.path.join(vuln_dir, "tool_usage.log")
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(logs))
+            created_files.append(log_path)
 
         # 写入BUILD文件
         if build_content:

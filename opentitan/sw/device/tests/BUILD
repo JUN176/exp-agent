@@ -7728,10 +7728,9 @@ opentitan_test(
 )
 
 
-# Added by agent2.py for 4-success-keymgr_ecc_truncation_startup
 opentitan_test(
-    name = "keymgr_vuln_test",
-    srcs = ["keymgr_vuln_test.c"],
+    name = "uart_vuln_test",
+    srcs = ["uart_vuln_test.c"],
     exec_env = {
         "//hw/top_earlgrey:sim_verilator": None,
         "//hw/top_earlgrey:sim_dv": None,
@@ -7741,7 +7740,7 @@ opentitan_test(
     ),
     deps = [
         "//hw/top_earlgrey/sw/autogen:top_earlgrey",
-        "//hw/top:keymgr_c_regs",
+        "//hw/top:uart_c_regs",
         "//sw/device/lib/base:mmio",
         "//sw/device/lib/base:bitfield",
         "//sw/device/lib/runtime:log",

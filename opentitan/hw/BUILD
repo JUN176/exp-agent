@@ -18,7 +18,7 @@ string_list_flag(
     name = "verilator_options",
     build_setting_default = [
         "--threads",
-        "16",
+        "4",
     ],
 )
 
@@ -30,7 +30,7 @@ string_list_flag(
     name = "make_options",
     build_setting_default = [
         "-j",
-        "16",
+        "4",
     ],
 )
 

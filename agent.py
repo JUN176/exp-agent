@@ -17,7 +17,7 @@ load_dotenv()
 #                         base_url="https://api.deepseek.com")
 # )
 model = OpenAIModel(
-    "gpt-5-mini",
+    "qwen3-coder-480b-a35b-instruct",
     provider=OpenAIProvider(api_key=os.getenv('OPEN_API_KEY'),
                             base_url="https://chatbox.isrc.ac.cn/api")
 )
@@ -75,6 +75,9 @@ async def process_single_vulnerability(vuln, idx, total_vulns, semaphore, log_lo
         stats: 统计信息字典
     """
     async with semaphore:
+        # Initialize tool usage log for this task
+        tools.tool_usage_log.set([])
+
         start_time = datetime.now()
 
         # 输出开始处理的信息
